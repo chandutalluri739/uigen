@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { test, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+import { SignJWT, jwtVerify } from "jose";
 
 const COOKIE_NAME = "auth-token";
 
@@ -124,6 +124,36 @@ test("getSession returns the session payload for a valid token", async () => {
 
 test("getSession returns null for a tampered/invalid token", async () => {
   cookieJar.set(COOKIE_NAME, "not-a-valid-jwt");
+
+  const session = await getSession();
+
+  expect(session).toBeNull();
+});
+
+test("getSession returns null for a token signed with a different secret", async () => {
+  const wrongSecret = new TextEncoder().encode("some-other-secret");
+  const token = await new SignJWT({ userId: "user-1", email: "user@example.com" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("7d")
+    .setIssuedAt()
+    .sign(wrongSecret);
+  cookieJar.set(COOKIE_NAME, token);
+
+  const session = await getSession();
+
+  expect(session).toBeNull();
+});
+
+test("getSession returns null for an expired token", async () => {
+  const secret = new TextEncoder().encode(
+    process.env.JWT_SECRET || "development-secret-key"
+  );
+  const token = await new SignJWT({ userId: "user-1", email: "user@example.com" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("-1s")
+    .setIssuedAt()
+    .sign(secret);
+  cookieJar.set(COOKIE_NAME, token);
 
   const session = await getSession();
 
