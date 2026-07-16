@@ -190,3 +190,31 @@ test("verifySession returns the payload for a valid token", async () => {
   expect(session?.userId).toBe("user-2");
   expect(session?.email).toBe("another@example.com");
 });
+
+test("verifySession returns null for a token signed with a different secret", async () => {
+  const wrongSecret = new TextEncoder().encode("some-other-secret");
+  const token = await new SignJWT({ userId: "user-1", email: "user@example.com" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("7d")
+    .setIssuedAt()
+    .sign(wrongSecret);
+
+  const session = await verifySession(makeRequest(token));
+
+  expect(session).toBeNull();
+});
+
+test("verifySession returns null for an expired token", async () => {
+  const secret = new TextEncoder().encode(
+    process.env.JWT_SECRET || "development-secret-key"
+  );
+  const token = await new SignJWT({ userId: "user-1", email: "user@example.com" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("-1s")
+    .setIssuedAt()
+    .sign(secret);
+
+  const session = await verifySession(makeRequest(token));
+
+  expect(session).toBeNull();
+});
