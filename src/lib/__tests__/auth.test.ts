@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { test, expect, vi, beforeEach } from "vitest";
+import { test, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "auth-token";
 
@@ -58,6 +59,52 @@ test("createSession sets an httpOnly cookie with the expected options", async ()
   });
   expect(options.expires).toBeInstanceOf(Date);
   expect(options.expires.getTime()).toBeGreaterThan(Date.now());
+});
+
+test("createSession signs a token that encodes the userId and email", async () => {
+  await createSession("user-1", "user@example.com");
+
+  const [, token] = setMock.mock.calls[0];
+  const secret = new TextEncoder().encode(
+    process.env.JWT_SECRET || "development-secret-key"
+  );
+  const { payload } = await jwtVerify(token, secret);
+
+  expect(payload.userId).toBe("user-1");
+  expect(payload.email).toBe("user@example.com");
+  expect(payload.expiresAt).toBeDefined();
+});
+
+test("createSession sets expires roughly 7 days out", async () => {
+  const before = Date.now();
+  await createSession("user-1", "user@example.com");
+  const after = Date.now();
+
+  const [, , options] = setMock.mock.calls[0];
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+  expect(options.expires.getTime()).toBeGreaterThanOrEqual(
+    before + sevenDaysMs - 1000
+  );
+  expect(options.expires.getTime()).toBeLessThanOrEqual(
+    after + sevenDaysMs + 1000
+  );
+});
+
+test("createSession only sets secure in production", async () => {
+  const originalEnv = process.env.NODE_ENV;
+
+  (process.env as any).NODE_ENV = "development";
+  await createSession("user-1", "user@example.com");
+  expect(setMock.mock.calls[0][2]).toMatchObject({ secure: false });
+
+  setMock.mockClear();
+
+  (process.env as any).NODE_ENV = "production";
+  await createSession("user-1", "user@example.com");
+  expect(setMock.mock.calls[0][2]).toMatchObject({ secure: true });
+
+  (process.env as any).NODE_ENV = originalEnv;
 });
 
 test("getSession returns null when there is no cookie", async () => {
