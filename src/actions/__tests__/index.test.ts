@@ -14,19 +14,22 @@ const bcryptMock = {
 };
 
 const createSessionMock = vi.fn();
+const deleteSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 const revalidatePathMock = vi.fn();
+const redirectMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("bcrypt", () => ({ default: bcryptMock }));
 vi.mock("@/lib/auth", () => ({
   createSession: createSessionMock,
-  deleteSession: vi.fn(),
-  getSession: vi.fn(),
+  deleteSession: deleteSessionMock,
+  getSession: getSessionMock,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 
-const { signUp, signIn } = await import("../index");
+const { signUp, signIn, signOut, getUser } = await import("../index");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -162,4 +165,57 @@ test("signIn returns a generic error when something throws", async () => {
     success: false,
     error: "An error occurred during sign in",
   });
+});
+
+test("signOut deletes the session, revalidates, and redirects home", async () => {
+  await signOut();
+
+  expect(deleteSessionMock).toHaveBeenCalled();
+  expect(revalidatePathMock).toHaveBeenCalledWith("/");
+  expect(redirectMock).toHaveBeenCalledWith("/");
+});
+
+test("getUser returns null when there is no session", async () => {
+  getSessionMock.mockResolvedValue(null);
+
+  const result = await getUser();
+
+  expect(result).toBeNull();
+  expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+});
+
+test("getUser returns the user for a valid session", async () => {
+  getSessionMock.mockResolvedValue({
+    userId: "user-1",
+    email: "user@example.com",
+  });
+  prismaMock.user.findUnique.mockResolvedValue({
+    id: "user-1",
+    email: "user@example.com",
+    createdAt: new Date("2026-01-01"),
+  });
+
+  const result = await getUser();
+
+  expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+    where: { id: "user-1" },
+    select: { id: true, email: true, createdAt: true },
+  });
+  expect(result).toEqual({
+    id: "user-1",
+    email: "user@example.com",
+    createdAt: new Date("2026-01-01"),
+  });
+});
+
+test("getUser returns null when the lookup throws", async () => {
+  getSessionMock.mockResolvedValue({
+    userId: "user-1",
+    email: "user@example.com",
+  });
+  prismaMock.user.findUnique.mockRejectedValue(new Error("db down"));
+
+  const result = await getUser();
+
+  expect(result).toBeNull();
 });
