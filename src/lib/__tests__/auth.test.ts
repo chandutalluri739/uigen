@@ -170,6 +170,24 @@ test("deleteSession removes the auth cookie", async () => {
   expect(cookieJar.has(COOKIE_NAME)).toBe(false);
 });
 
+test("deleteSession is a no-op when there is no session cookie", async () => {
+  expect(cookieJar.has(COOKIE_NAME)).toBe(false);
+
+  await deleteSession();
+
+  expect(deleteMock).toHaveBeenCalledWith(COOKIE_NAME);
+  expect(cookieJar.has(COOKIE_NAME)).toBe(false);
+});
+
+test("deleteSession causes getSession to return null afterward", async () => {
+  await createSession("user-1", "user@example.com");
+  await deleteSession();
+
+  const session = await getSession();
+
+  expect(session).toBeNull();
+});
+
 test("verifySession returns null when the request has no auth cookie", async () => {
   const session = await verifySession(makeRequest());
   expect(session).toBeNull();
