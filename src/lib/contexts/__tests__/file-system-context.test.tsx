@@ -20,6 +20,8 @@ const mockFileSystem = {
   insertInFile: vi.fn(),
   getNode: vi.fn(),
   serialize: vi.fn(() => ({})),
+  deserializeFromNodes: vi.fn(),
+  reset: vi.fn(),
 };
 
 beforeEach(() => {
@@ -482,6 +484,106 @@ test("handles unknown command gracefully", () => {
   expect(mockFileSystem.createFileWithParents).not.toHaveBeenCalled();
   expect(mockFileSystem.replaceInFile).not.toHaveBeenCalled();
   expect(mockFileSystem.insertInFile).not.toHaveBeenCalled();
+});
+
+test("deserializes initialData when provided", () => {
+  const initialData = { "/": { type: "directory" } };
+
+  renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => (
+      <FileSystemProvider initialData={initialData}>{children}</FileSystemProvider>
+    ),
+  });
+
+  expect(mockFileSystem.deserializeFromNodes).toHaveBeenCalledWith(initialData);
+});
+
+test("does not deserialize when initialData is not provided", () => {
+  renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => <FileSystemProvider>{children}</FileSystemProvider>,
+  });
+
+  expect(mockFileSystem.deserializeFromNodes).not.toHaveBeenCalled();
+});
+
+test("reset clears selectedFile, calls fileSystem.reset, and triggers refresh", () => {
+  const { result } = renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => <FileSystemProvider>{children}</FileSystemProvider>,
+  });
+
+  act(() => {
+    result.current.setSelectedFile("/test.js");
+  });
+
+  const initialTrigger = result.current.refreshTrigger;
+
+  act(() => {
+    result.current.reset();
+  });
+
+  expect(mockFileSystem.reset).toHaveBeenCalled();
+  expect(result.current.selectedFile).toBeNull();
+  expect(result.current.refreshTrigger).toBe(initialTrigger + 1);
+});
+
+test("handles file_manager delete command failure without clearing selectedFile", () => {
+  mockFileSystem.deleteFile.mockReturnValue(false);
+
+  const { result } = renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => <FileSystemProvider>{children}</FileSystemProvider>,
+  });
+
+  act(() => {
+    result.current.setSelectedFile("/test.js");
+  });
+
+  act(() => {
+    result.current.handleToolCall({
+      toolName: "file_manager",
+      args: {
+        command: "delete",
+        path: "/test.js",
+      },
+    });
+  });
+
+  expect(result.current.selectedFile).toBe("/test.js");
+});
+
+test("handles file_manager rename command with missing new_path gracefully", () => {
+  const { result } = renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => <FileSystemProvider>{children}</FileSystemProvider>,
+  });
+
+  act(() => {
+    result.current.handleToolCall({
+      toolName: "file_manager",
+      args: {
+        command: "rename",
+        path: "/old.js",
+      },
+    });
+  });
+
+  expect(mockFileSystem.rename).not.toHaveBeenCalled();
+});
+
+test("handles str_replace_editor create command with missing file_text gracefully", () => {
+  const { result } = renderHook(() => useFileSystem(), {
+    wrapper: ({ children }) => <FileSystemProvider>{children}</FileSystemProvider>,
+  });
+
+  act(() => {
+    result.current.handleToolCall({
+      toolName: "str_replace_editor",
+      args: {
+        command: "create",
+        path: "/test.js",
+      },
+    });
+  });
+
+  expect(mockFileSystem.createFileWithParents).not.toHaveBeenCalled();
 });
 
 test("handles null file content when updating file", () => {
